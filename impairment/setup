@@ -1,0 +1,64 @@
+read -p "Please enter the user name that you want to set up the Impairment device for: " username
+read -p "Please enter the full path that you want to install this software into, e.g. /home/user/desire-measurement-client: " installPath
+
+echo "You entered: Username = $username | Installation Path = $installPath"
+read -p "If you want to proceed, please type yes. If not, please close the setup script or type no." yn
+case $yn in
+    yes ) echo "Proceeding with the setup.";;
+    no ) echo "Aborting.";
+         exit;;
+    * ) echo "Read neither yes nor no -  aborting...";
+        exit 1;;
+esac
+
+echo "Updating your system and installing prerequisites..."
+sleep 2
+sudo apt update
+sudo apt install -y python3-venv
+
+# Create install directory
+echo "Creating install directory at ${installPath} ..."
+mkdir -p $installPath
+
+# Copy files
+echo "Copying files..."
+cp impairAPI.py ${installPath}
+cp setup_bridge.sh ${installPath}
+cp README.md ${installPath}
+
+# Setup python venv and install dependencies
+echo "Installing python venv at ${installPath}/venv-desire ..."
+python3 -m venv ${installPath}/venv-desire
+echo "Installing python dependencies..."
+sleep 2
+${installPath}/venv-desire/bin/pip3 install flask requests
+
+# Service installation
+## Impairment Device API Service
+pathToService="/etc/systemd/system/impairAPI.service"
+echo "Installing impairAPI.service at ${pathToService}..."
+touch $pathToService
+echo "[Unit]" >> $pathToService
+echo "Description=DeSiRe-NG Impairment Device API" >> $pathToService
+echo "After=network.target" >> $pathToService
+echo "" >> $pathToService
+echo "[Service]" >> $pathToService
+echo "Type=simple" >> $pathToService
+echo "ExecStartPre=/bin/sleep 10" >> $pathToService
+echo "ExecStart=${installPath}/venv-desire/bin/python3 ${installPath}/impairAPI.py" >> $pathToService
+echo "" >> $pathToService
+echo "[Install]" >> $pathToService
+echo "WantedBy=multi-user.target" >> $pathToService
+
+# Bridge setup
+echo "Setting up crontab for the bridge configuration..."
+(sudo crontab -l 2>/dev/null; echo "@reboot sleep 5 && ${installPath}/setup_bridge.sh") | sudo crontab -
+
+# Enable service
+echo "Enabling service..."
+sleep 2
+sudo systemctl daemon-reload
+sudo systemctl enable impairAPI.service
+sudo systemctl restart impairAPI.service 
+
+echo "Finished setup!"
